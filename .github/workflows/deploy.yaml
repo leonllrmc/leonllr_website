@@ -15,7 +15,7 @@ jobs:
       # Point every image link in the blog submodule to the Vercel hosting.
       # Only touches the runner's working copy: nothing is committed or pushed.
       - name: Redirect blog image links to llrblog.vercel.app
-        run: ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app
+        run: bash ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app
 
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
