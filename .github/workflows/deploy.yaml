@@ -10,6 +10,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
         with:
