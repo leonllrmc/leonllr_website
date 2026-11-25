@@ -26,10 +26,7 @@ jobs:
           server-dir: /
           local-dir: ./
           dangerous-clean-slate: true
-          # Optional: images are now served by Vercel, so skip uploading them.
-          # Setting `exclude` replaces the action's defaults, hence the first three lines.
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            blog/projects/*/img/**
+          # Images are served by Vercel now, so don't upload them.
+          # This action version (4.0.0) only understands the [a, b, c] list format,
+          # and setting `exclude` replaces the defaults, hence the first three patterns.
+          exclude: "[**/.git*, **/.git*/**, **/node_modules/**, blog/projects/*/img/**]"
