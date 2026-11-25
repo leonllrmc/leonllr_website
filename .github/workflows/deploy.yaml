@@ -12,10 +12,10 @@ jobs:
         with:
           submodules: recursive
 
-      # Point every image link in the blog submodule to the Vercel hosting.
+      # Point blog image links to Vercel and make the other paths work under /blog/.
       # Only touches the runner's working copy: nothing is committed or pushed.
-      - name: Redirect blog image links to llrblog.vercel.app
-        run: bash ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app
+      - name: Rewrite blog links (images to llrblog.vercel.app, paths under /blog/)
+        run: bash ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app /blog
 
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
