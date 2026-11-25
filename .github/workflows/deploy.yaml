@@ -8,11 +8,15 @@ jobs:
     environment: secrets
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # Point every image link in the blog submodule to the Vercel hosting.
+      # Only touches the runner's working copy: nothing is committed or pushed.
+      - name: Redirect blog image links to llrblog.vercel.app
+        run: ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app
+
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
         with:
@@ -22,3 +26,10 @@ jobs:
           server-dir: /
           local-dir: ./
           dangerous-clean-slate: true
+          # Optional: images are now served by Vercel, so skip uploading them.
+          # Setting `exclude` replaces the action's defaults, hence the first three lines.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            blog/projects/*/img/**
