@@ -13,7 +13,7 @@ jobs:
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
         with:
-          server: aw256.ftp.infomaniak.com
+          server: h2park-8d750cc5.infomaniak.ch
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           server-dir: /
