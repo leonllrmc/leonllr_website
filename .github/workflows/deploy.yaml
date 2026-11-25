@@ -5,6 +5,7 @@ on: [push]
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: secrets
 
     steps:
       - name: Checkout repository
