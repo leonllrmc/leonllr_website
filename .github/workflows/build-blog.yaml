@@ -16,6 +16,7 @@ on:
   pull_request:
 
 env:
+  SITE_URL: https://leonllr.ch # public origin (social-media tags, sitemaps)
   SITE_PREFIX: /blog # URL the blog is served under
   IMAGE_HOST: https://llrblog.vercel.app # blog images stay on Vercel
 
@@ -46,7 +47,23 @@ jobs:
         run: bash ./.github/scripts/rewrite-image-links.sh blog "$IMAGE_HOST" "$SITE_PREFIX"
 
       - name: Build static site
-        run: node .github/scripts/build-blog.mjs blog "dist$SITE_PREFIX" --base "$SITE_PREFIX"
+        run: node .github/scripts/build-blog.mjs blog "dist$SITE_PREFIX" --base "$SITE_PREFIX" --site-url "$SITE_URL"
+
+      # The site root only has the blog for now: its sitemap index lists the blog
+      # sitemap generated above. Add a <sitemap> entry here for each new section.
+      - name: Root sitemap and robots.txt
+        run: |
+          cat > dist/sitemap.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <sitemap>
+              <loc>$SITE_URL$SITE_PREFIX/sitemap.xml</loc>
+              <lastmod>$(grep -o '<lastmod>[^<]*' "dist$SITE_PREFIX/sitemap.xml" | cut -d'>' -f2 | sort | tail -n1)</lastmod>
+            </sitemap>
+          </sitemapindex>
+          EOF
+          printf 'User-agent: *\nDisallow:\n\nSitemap: %s/sitemap.xml\n' "$SITE_URL" > dist/robots.txt
+          cat dist/sitemap.xml
 
       - uses: actions/upload-artifact@v4
         with:

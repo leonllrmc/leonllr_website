@@ -16,11 +16,20 @@
 // Markdown goes through showdown 2.1.0 with default options, exactly like the
 // browser, so the output matches what visitors saw before.
 //
-// Usage: node build-blog.mjs <blog_dir> <out_dir> [--base /blog]
-//   --base   URL prefix the site is served under ("" when served at the root).
-//            Only used for the links this script generates itself; the links
-//            in the sources are expected to be prefixed already
-//            (see rewrite-image-links.sh).
+// Each generated page also gets the <head> tags link previews are made from
+// (Open Graph, Twitter card, description, canonical URL). Articles use their
+// top_background as the preview image, projects their thumbnail.
+// With --site-url, sitemap.xml is generated from those pages (lastmod = newest
+// publish_date) and the Sitemap line of robots.txt points to it.
+//
+// Usage: node build-blog.mjs <blog_dir> <out_dir> [--base /blog] [--site-url https://example.com]
+//   --base       URL prefix the site is served under ("" when served at the root).
+//                Only used for the links this script generates itself; the links
+//                in the sources are expected to be prefixed already
+//                (see rewrite-image-links.sh).
+//   --site-url   public origin of the site, used for the absolute URLs social
+//                media needs (og:url, canonical, local preview images). Without
+//                it those tags are left out and only absolute images are used.
 import fs from "node:fs";
 import path from "node:path";
 import * as cheerio from "cheerio";
@@ -28,22 +37,25 @@ import showdown from "showdown";
 
 function usage(msg) {
   if (msg) console.error(`error: ${msg}`);
-  console.error("usage: node build-blog.mjs <blog_dir> <out_dir> [--base /blog]");
+  console.error("usage: node build-blog.mjs <blog_dir> <out_dir> [--base /blog] [--site-url https://example.com]");
   process.exit(2);
 }
 
 const args = process.argv.slice(2);
-let base = "";
+const options = { base: "", "site-url": "" };
 const positional = [];
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === "--base") base = args[++i] ?? usage("--base needs a value");
-  else if (args[i].startsWith("--base=")) base = args[i].slice("--base=".length);
-  else positional.push(args[i]);
+  const m = args[i].match(/^--([a-z-]+)(?:=(.*))?$/);
+  if (!m) positional.push(args[i]);
+  else if (!(m[1] in options)) usage(`unknown option --${m[1]}`);
+  else options[m[1]] = m[2] ?? args[++i] ?? usage(`--${m[1]} needs a value`);
 }
 if (positional.length !== 2) usage();
 const [srcDir, outDir] = positional.map((p) => path.resolve(p));
-base = base.replace(/^\/*/, "/").replace(/\/+$/, "");
+let base = options.base.replace(/^\/*/, "/").replace(/\/+$/, "");
 if (base === "/") base = "";
+const siteUrl = options["site-url"].replace(/\/+$/, "");
+if (siteUrl && !/^https?:\/\/[^/]+$/i.test(siteUrl)) usage("--site-url must be an origin like https://example.com");
 
 {
   const rel = path.relative(srcDir, outDir);
@@ -83,6 +95,59 @@ function displayDate(publishDate) {
   if (!match) throw new Error(`bad publish_date ${JSON.stringify(publishDate)}`);
   const [d, m, y] = match[0].split("/").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("fr-FR");
+}
+
+// "04/07/2026 13:44" -> "2026-07-04T13:44:00+02:00" (dates are written in Swiss time)
+function isoDate(publishDate) {
+  const m = String(publishDate).match(/(\d+)\/(\d+)\/(\d+)(?:\s+(\d+):(\d+))?/);
+  if (!m) return undefined;
+  const [, d, mo, y, h = "0", mi = "0"] = m;
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = `${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(mi)}:00`;
+  // offset of Europe/Zurich at that moment (CET/CEST)
+  const offset = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Zurich", timeZoneName: "longOffset" })
+    .formatToParts(new Date(`${local}Z`)).find((p) => p.type === "timeZoneName").value.replace("GMT", "");
+  return local + (offset || "+00:00");
+}
+
+const plainText = (html) => cheerio.load(`<body>${html ?? ""}</body>`)("body").text().replace(/\s+/g, " ").trim();
+const absolute = (url) => (/^https?:\/\//i.test(url) ? url : siteUrl && url.startsWith("/") ? siteUrl + url : undefined);
+
+// Link-preview tags (Open Graph for Facebook/Discord/LinkedIn/..., Twitter card),
+// replacing any the template already has, right after <title>.
+function addSocialTags($, { type, title, description, path: pagePath, image, imageAlt, published }) {
+  const pageUrl = siteUrl ? siteUrl + base + pagePath : undefined;
+  const img = image && absolute(image);
+  const desc = plainText(description);
+  $('meta[property^="og:"], meta[property^="article:"], meta[name^="twitter:"], meta[name="description"], link[rel="canonical"]').remove();
+
+  const tags = [];
+  const meta = (attr, key, content) => {
+    if (content) tags.push($("<meta>").attr(attr, key).attr("content", content));
+  };
+  meta("name", "description", desc);
+  if (pageUrl) tags.push($("<link>").attr("rel", "canonical").attr("href", pageUrl));
+  meta("property", "og:site_name", "llrblog");
+  meta("property", "og:type", type);
+  meta("property", "og:title", title);
+  meta("property", "og:description", desc);
+  meta("property", "og:url", pageUrl);
+  meta("property", "og:image", img);
+  meta("property", "og:image:alt", img && imageAlt);
+  meta("property", "article:published_time", type === "article" ? isoDate(published) : undefined);
+  meta("property", "article:author", type === "article" ? "leonllrmc" : undefined);
+  meta("name", "twitter:card", img && type === "article" ? "summary_large_image" : "summary");
+  meta("name", "twitter:title", title);
+  meta("name", "twitter:description", desc);
+  meta("name", "twitter:image", img);
+  meta("name", "twitter:image:alt", img && imageAlt);
+
+  const anchor = $("head > title").first();
+  const indent = "\n   ";
+  const html = tags.map((t) => $.html(t)).join(indent);
+  if (anchor.length) anchor.after(indent + html);
+  else $("head").prepend(indent + html);
+  if (!img && image) warnings.push(`${pagePath}: preview image ${image} is not absolute (use --site-url), left out`);
 }
 
 // The scripts that render the page in the browser are replaced by the
@@ -137,6 +202,12 @@ const projects = projectNames.map((name) => {
 const markdown = new showdown.Converter();
 let pageCount = 0;
 const warnings = [];
+const sitemap = []; // { path, lastmod }
+
+// "dd/mm/yyyy ..." -> "yyyy-mm-dd" for the sitemap
+const day = (publishDate) => isoDate(publishDate)?.slice(0, 10);
+const latest = (dates) => dates.filter(Boolean).sort().at(-1);
+const projectLastmod = (articles) => latest(Object.values(articles).map((a) => day(a.publish_date)));
 
 // 3) home page
 {
@@ -162,7 +233,16 @@ const warnings = [];
   }
   $("#project-list").html(html);
   dropClientRenderer($, "main.js");
+  addSocialTags($, {
+    type: "website",
+    title: "llrblog",
+    description: `leonllrmc's project blog. Projects: ${projects.map((p) => plainText(p.meta.title)).join(", ")}`,
+    path: "/",
+    image: $("img.img-logo").first().attr("src"),
+    imageAlt: "llrblog logo",
+  });
   write("index.html", $.html());
+  sitemap.push({ path: "/", lastmod: latest(projects.map((p) => projectLastmod(p.articles))) });
   pageCount++;
 }
 
@@ -198,7 +278,16 @@ for (const { name, meta, articles } of projects) {
   }
   $p("#articles-list").html(cards);
   dropClientRenderer($p, "project.js");
+  addSocialTags($p, {
+    type: "website",
+    title: plainText(title),
+    description,
+    path: `/projects/${name}/`,
+    image: imageUrl(thumbnail, name),
+    imageAlt: plainText(title),
+  });
   write(`projects/${name}/index.html`, $p.html());
+  sitemap.push({ path: `/projects/${name}/`, lastmod: projectLastmod(articles) });
   pageCount++;
 
   for (const [articleName, article] of Object.entries(articles)) {
@@ -253,9 +342,40 @@ for (const { name, meta, articles } of projects) {
       document.addEventListener("DOMContentLoaded", () => M.Carousel.init(document.querySelectorAll('.carousel'), { numVisible: 1 }));
    </script>
 `);
+    addSocialTags($a, {
+      type: "article",
+      title: plainText(article.title),
+      description: article.description,
+      path: `/projects/${name}/article/${articleName}/`,
+      image: imageUrl(article.top_background, name),
+      imageAlt: plainText(article.title),
+      published: article.publish_date,
+    });
     write(`projects/${name}/article/${articleName}/index.html`, $a.html());
+    sitemap.push({ path: `/projects/${name}/article/${articleName}/`, lastmod: day(article.publish_date) });
     pageCount++;
   }
+}
+
+// 5) sitemap.xml generated from the pages above (replaces the hand-written one),
+//    and robots.txt pointed at it
+if (siteUrl) {
+  const xmlEscape = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const urls = sitemap.map(({ path: p, lastmod }) =>
+    `  <url>\n    <loc>${xmlEscape(siteUrl + base + p)}</loc>\n` +
+    (lastmod ? `    <lastmod>${lastmod}</lastmod>\n` : "") +
+    `  </url>`);
+  write("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`);
+
+  const robots = path.join(outDir, "robots.txt");
+  const sitemapLine = `Sitemap: ${siteUrl}${base}/sitemap.xml`;
+  const current = fs.existsSync(robots) ? fs.readFileSync(robots, "utf8") : "User-agent: *\nDisallow:\n";
+  fs.writeFileSync(robots, /^Sitemap:.*$/im.test(current)
+    ? current.replace(/^Sitemap:.*$/gim, sitemapLine)
+    : current.replace(/\n*$/, `\n\n${sitemapLine}\n`));
+} else {
+  warnings.push("no --site-url, sitemap.xml copied as-is instead of generated");
 }
 
 for (const w of warnings) console.warn(`warning: ${w}`);
