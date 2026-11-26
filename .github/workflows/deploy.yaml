@@ -1,21 +1,36 @@
 name: Deploy to Infomaniak
 
-on: [push]
+on:
+  push:
+  workflow_dispatch:
+  # called by update-blog.yaml after it bumped the blog submodule
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit of this repo to deploy (default: the triggering commit)"
+        type: string
+        default: ""
 
 jobs:
+  build:
+    uses: ./.github/workflows/build-blog.yaml
+    with:
+      ref: ${{ inputs.ref }}
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment: secrets
+    # never run two uploads at once (dangerous-clean-slate wipes the server)
+    concurrency:
+      group: deploy-infomaniak
+      cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          submodules: recursive
-
-      # Point blog image links to Vercel and make the other paths work under /blog/.
-      # Only touches the runner's working copy: nothing is committed or pushed.
-      - name: Rewrite blog links (images to llrblog.vercel.app, paths under /blog/)
-        run: bash ./.github/scripts/rewrite-image-links.sh blog https://llrblog.vercel.app /blog
+          name: site
+          path: dist
 
       - name: Deploy dist dir
         uses: SamKirkland/FTP-Deploy-Action@4.0.0
@@ -24,7 +39,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           server-dir: /
-          local-dir: ./
+          local-dir: ./dist/
           dangerous-clean-slate: true
           # Images are served by Vercel now, so don't upload them.
           # This action version (4.0.0) only understands the [a, b, c] list format,

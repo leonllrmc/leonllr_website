@@ -3,7 +3,8 @@
 # main site:
 #   - image links point to the Vercel deployment (steps 1-3)
 #   - every other root-relative path gets the sub-folder prefix (step 4)
-#   - the vercel.json routes are translated and merged into .htaccess (step 5)
+#   - the vercel.json routes are translated and merged into .htaccess (step 5,
+#     skipped with SKIP_ROUTING=1)
 # Works on the checked-out copy only (never committed). Safe to run twice.
 #
 # Usage: rewrite-image-links.sh [blog_dir] [vercel_url] [site_prefix]
@@ -65,8 +66,12 @@ find "$BLOG_DIR/projects" -type f -name '*.md' -print0 |
 #    as .htaccess rules. They are translated from vercel.json and merged into the
 #    existing .htaccess (HTACCESS env var, default $BLOG_DIR/.htaccess) inside a
 #    marked block, so rules already in that file are kept.
+#    SKIP_ROUTING=1 skips this step: the static build (build-blog.mjs) writes real
+#    pages at those URLs, and these rules would send them back to article.html.
 HTACCESS="${HTACCESS:-$BLOG_DIR/.htaccess}"
-if [ -f "$BLOG_DIR/vercel.json" ]; then
+if [ "${SKIP_ROUTING:-0}" = 1 ]; then
+  echo "SKIP_ROUTING=1, vercel.json routes not translated"
+elif [ -f "$BLOG_DIR/vercel.json" ]; then
   # path of the blog folder relative to the .htaccess folder ("" or "blog/")
   REL="$(realpath --relative-to="$(dirname "$HTACCESS")" "$BLOG_DIR")"
   [ "$REL" = "." ] && REL=""

@@ -1,0 +1,57 @@
+name: Build blog
+
+# Builds the `blog` submodule into a static website (pre-rendered HTML, no
+# client-side markdown rendering) and uploads it as the `site` artifact, laid
+# out the way it is served: site/blog/...
+# Used by deploy.yaml, and can be run by hand to check a build.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit of this repo to build (default: the triggering commit)"
+        type: string
+        default: ""
+  workflow_dispatch:
+  pull_request:
+
+env:
+  SITE_PREFIX: /blog # URL the blog is served under
+  IMAGE_HOST: https://llrblog.vercel.app # blog images stay on Vercel
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Install build dependencies
+        run: npm ci --prefix .github/scripts
+
+      # Point blog image links to Vercel and make the other paths work under /blog/.
+      # Only touches the runner's working copy: nothing is committed or pushed.
+      # Routing is skipped: the static build writes real pages at the pretty URLs.
+      - name: Rewrite blog links (images to Vercel, paths under /blog/)
+        env:
+          SKIP_ROUTING: 1
+        run: bash ./.github/scripts/rewrite-image-links.sh blog "$IMAGE_HOST" "$SITE_PREFIX"
+
+      - name: Build static site
+        run: node .github/scripts/build-blog.mjs blog "dist$SITE_PREFIX" --base "$SITE_PREFIX"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist/
+          include-hidden-files: true # .htaccess
+          if-no-files-found: error
+          retention-days: 7

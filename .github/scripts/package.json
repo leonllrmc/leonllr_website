@@ -1,0 +1,10 @@
+{
+  "name": "leonllr-website-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for the deployment workflows (not deployed)",
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "showdown": "2.1.0"
+  }
+}

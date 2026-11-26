@@ -1,0 +1,61 @@
+name: Update blog and deploy
+
+# Moves the `blog` submodule to the latest commit of llrblog, commits that to
+# master and deploys it.
+#
+# Triggered by llrblog's notify-website.yaml right after each push there
+# (repository_dispatch "blog-updated"). The daily schedule is a fallback in
+# case that notification is missed (e.g. its token expired).
+#
+# Note: a push made with GITHUB_TOKEN does not start other workflows, so the
+# commit below does not trigger deploy.yaml on its own; it is called explicitly.
+
+on:
+  repository_dispatch:
+    types: [blog-updated]
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-blog
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          submodules: recursive
+
+      - name: Move blog submodule to its latest commit
+        id: bump
+        run: |
+          git submodule update --remote blog
+          if git diff --quiet -- blog; then
+            echo "Blog already up to date"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update blog to $(git -C blog log -1 --format='%h: %s')" -- blog
+          git push origin HEAD:master
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: bump
+    if: needs.bump.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
+    secrets: inherit
