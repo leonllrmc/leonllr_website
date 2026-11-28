@@ -2,7 +2,8 @@
 // Adds the main site (every file of this repo outside the blog submodule) to the
 // built site, next to the blog that build-blog.mjs already wrote there.
 //
-//   - copies the tracked files, except .github/, .git* files and submodules
+//   - copies every tracked file, at any depth (root files and all folders,
+//     including ones added later), except .github/, .git* files and submodules
 //     (the blog is built separately into <out_dir>/blog)
 //   - sitemap-main.xml: the main site's own pages (*.html), lastmod = date of
 //     the last commit that touched the file
@@ -47,9 +48,13 @@ const latest = (dates) => dates.filter(Boolean).sort().at(-1);
 
 // 1) copy the main site
 const copied = [];
+const submodules = [];
 for (const entry of git("ls-files", "-s", "-z").split("\0").filter(Boolean)) {
   const [info, file] = entry.split("\t");
-  if (info.startsWith("160000 ")) continue; // submodule (the blog)
+  if (info.startsWith("160000 ")) { // submodule: built by its own step (the blog), not copied
+    submodules.push(file);
+    continue;
+  }
   if (file.split("/").some((part) => part.startsWith(".git"))) continue; // .github/, .gitignore, .gitmodules
   if (GENERATED.has(file)) continue;
   const dest = path.join(outDir, file);
@@ -101,3 +106,9 @@ fs.writeFileSync(path.join(outDir, "robots.txt"), `${rules}\n\nSitemap: ${siteUr
 
 console.log(`Main site: ${copied.length} files copied, ${pages.length} pages in sitemap-main.xml, ` +
   `${sitemaps.length} sitemaps in sitemap.xml`);
+const folders = [...new Set(copied.filter((f) => f.includes("/")).map((f) => f.split("/")[0]))];
+if (folders.length) console.log(`  folders: ${folders.join(", ")}`);
+for (const s of submodules) {
+  const built = fs.existsSync(path.join(outDir, s));
+  console.log(`  submodule ${s}: not copied${built ? " (built separately)" : " (WARNING: nothing built for it, it is not deployed)"}`);
+}
