@@ -85,6 +85,3 @@ echo "Site paths prefixed with $SITE_PREFIX/"
 
 echo "rewiting sitemap url"
 sed -i -e 's/llrblog.vercel.com/leonllr.ch\/blog/g' $BLOG_DIR/sitemap.xml
-
-echo "running shallow copy to copy main page"
-cp * dist

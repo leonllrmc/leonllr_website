@@ -1,8 +1,10 @@
-name: Build blog
+name: Build site
 
-# Builds the `blog` submodule into a static website (pre-rendered HTML, no
-# client-side markdown rendering) and uploads it as the `site` artifact, laid
-# out the way it is served: site/blog/...
+# Builds the whole website and uploads it as the `site` artifact, laid out the
+# way it is served:
+#   /        the main site (this repo's files outside the blog submodule)
+#   /blog/   the `blog` submodule built into a static website (pre-rendered
+#            HTML, no client-side markdown rendering)
 # Used by deploy.yaml, and can be run by hand to check a build.
 
 on:
@@ -28,6 +30,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
+          fetch-depth: 0 # file dates for the main site's sitemap
 
       - uses: actions/setup-node@v4
         with:
@@ -49,21 +52,12 @@ jobs:
       - name: Build static site
         run: node .github/scripts/build-blog.mjs blog "dist$SITE_PREFIX" --base "$SITE_PREFIX" --site-url "$SITE_URL"
 
-      # The site root only has the blog for now: its sitemap index lists the blog
-      # sitemap generated above. Add a <sitemap> entry here for each new section.
-      - name: Root sitemap and robots.txt
+      # Everything else in this repo (main page, contact, images...) goes to the
+      # site root, plus the root sitemap index (main pages + blog) and robots.txt.
+      - name: Add main site
         run: |
-          cat > dist/sitemap.xml <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-            <sitemap>
-              <loc>$SITE_URL$SITE_PREFIX/sitemap.xml</loc>
-              <lastmod>$(grep -o '<lastmod>[^<]*' "dist$SITE_PREFIX/sitemap.xml" | cut -d'>' -f2 | sort | tail -n1)</lastmod>
-            </sitemap>
-          </sitemapindex>
-          EOF
-          printf 'User-agent: *\nDisallow:\n\nSitemap: %s/sitemap.xml\n' "$SITE_URL" > dist/robots.txt
-          cat dist/sitemap.xml
+          node .github/scripts/build-site-root.mjs dist --site-url "$SITE_URL"
+          cat dist/sitemap.xml dist/robots.txt
 
       - uses: actions/upload-artifact@v4
         with:
