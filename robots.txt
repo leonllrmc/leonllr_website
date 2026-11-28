@@ -1,0 +1,6 @@
+User-agent: *
+Disallow:
+Allow: /
+
+Sitemap: https://leonllr.ch/sitemap.xml
+         https://leonllr.ch/blog/sitemap.xml
